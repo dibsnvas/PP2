@@ -1,4 +1,4 @@
 import math
-degree = float(input())
+degree = float(input(Input degree: ))
 radian = degree*(math.pi/180)
-print(radian)
+print("Output radian: ",radian)
