@@ -11,7 +11,7 @@ image = pygame.transform.scale(image, (400, 300))
 
 
 music = ["Brent Faiyaz - Best Time.mp3", "Childish Gambino - 3005.mp3",
-         "Frank Ocean - Lost.mp3", "wave to earth - love.mp3"]
+         "Frank Ocean - Lost.mp3", "wave to earth - love.mp3", "KISS OF LIFE - Nobody Knows.mp3", "Madison Beer - Home To Another One.mp3"]
 
 
 current_music = 0
