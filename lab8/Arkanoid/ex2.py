@@ -32,7 +32,7 @@ game_score_rect = game_score_text.get_rect()
 game_score_rect.center = (210, 20)
 
 # Catching sound
-collision_sound = pygame.mixer.Sound('audio/catch.mp3')
+collision_sound = pygame.mixer.Sound('catch.mp3')
 
 # Time variables
 time_elapsed = 0
