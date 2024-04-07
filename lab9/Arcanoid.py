@@ -1,61 +1,51 @@
-import time
 import pygame
 import random
-import math
 
-# Initialize Pygame
 pygame.init()
-pygame.mixer.init()
 
-# Constants
-WIDTH, HEIGHT = 810, 540
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-BLUE = (0, 0, 255)
-GOLD = (255, 215, 0)
-PADDLE_WIDTH, PADDLE_HEIGHT = 120, 20
-PADDLE_SPEED = 15
-BALL_RADIUS = 13
-BALL_SPEED = 5
-BRICK_ROWS, BRICK_COLS = 6, 10
-MAX_BOUNCE_ANGLE = math.radians(60)
-BONUS_PERKS = ['Speed up', 'Speed down', 'Paddle expand', 'Paddle shrink']
-
-# Some initializations
-collision_cycle = 0
-bonus_text = ""
-bonus_text_timer = 0
-normal_mode_text_timer = 0
-challenge_mode_text_timer = 0
-
-# Frames
-clock = pygame.time.Clock()
+W, H = 1200, 800
 FPS = 60
-# Set up the game screen
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Arkanoid Game")
 
-# Function for increasing ball's speed over time and shrinking paddle's width per 5 collisions
-def overtime():
-    global collision_cycle, BALL_SPEED, PADDLE_WIDTH, paddle
-    collision_cycle += 1
-    if BALL_SPEED < 13:
-        BALL_SPEED += 0.2
-    if collision_cycle % 5 == 0 and PADDLE_WIDTH > 70: 
-        PADDLE_WIDTH -= 1
-    paddle.width = PADDLE_WIDTH
+screen = pygame.display.set_mode((W, H), pygame.RESIZABLE)
+clock = pygame.time.Clock()
+done = False
+bg = (0, 0, 0)
 
-# Function to calculate the angle of ball and to rotate it depending on where the ball landed
-def rotate_vector(vector, angle):
-    x, y = vector
-    angle_rad = math.radians(angle)
-    new_x = x * math.cos(angle_rad) - y * math.sin(angle_rad)
-    new_y = x * math.sin(angle_rad) + y * math.cos(angle_rad)
-    return new_x, new_y
+# paddle
+paddleW = 150
+paddleH = 25
+paddleSpeed = 20
+paddle = pygame.Rect(W // 2 - paddleW // 2, H - paddleH - 30, paddleW, paddleH)
 
-# Function to rotate the ball when it collides with wall, paddle or bricks
+# Ball
+ballRadius = 20
+ballSpeed = 6
+ball_rect = int(ballRadius * 2 ** 0.5)
+ball = pygame.Rect(random.randrange(ball_rect, W - ball_rect), H // 2, ball_rect, ball_rect)
+dx, dy = 1, -1
+
+# Game score
+game_score = 0
+game_score_fonts = pygame.font.SysFont('comicsansms', 40)
+game_score_text = game_score_fonts.render(f'Your game score is: {game_score}', True, (0, 0, 0))
+game_score_rect = game_score_text.get_rect()
+game_score_rect.center = (210, 20)
+
+# Catching sound
+collision_sound = pygame.mixer.Sound('catch.mp3')
+
+# Time variables
+time_elapsed = 0
+speed_increase_interval = 1000  # Increase speed every 1 seconds (in milliseconds)
+speed_increase_amount = 0.2  # Amount by which speed increases
+shrink_paddle_interval = 5000  # Shrink paddle every 5 seconds (in milliseconds)
+shrink_paddle_amount = 10
+
+# Pause state
+is_paused = False
+
+
 def detect_collision(dx, dy, ball, rect):
-    overtime()
     if dx > 0:
         delta_x = ball.right - rect.left
     else:
@@ -67,280 +57,178 @@ def detect_collision(dx, dy, ball, rect):
 
     if abs(delta_x - delta_y) < 10:
         dx, dy = -dx, -dy
-    if delta_x > delta_y:
+    elif delta_x > delta_y:
         dy = -dy
     elif delta_y > delta_x:
         dx = -dx
     return dx, dy
 
-# Function for applying bonus perks 
-def apply_bonus_perk(perk):
-    global PADDLE_SPEED, PADDLE_WIDTH
-    if perk == 'Speed up':
-        PADDLE_SPEED += 5
-    elif perk == 'Speed down':
-        if PADDLE_WIDTH < 5:
-            PADDLE_WIDTH = 5
-        else:
-            PADDLE_WIDTH -= 5
-    elif perk == 'Paddle expand':
-        PADDLE_WIDTH += 20
-    elif perk == 'Paddle shrink':
-        if PADDLE_WIDTH < 70:
-            PADDLE_WIDTH = 70
-        else:
-            PADDLE_WIDTH -= 20
+
+# block settings
+block_list = [pygame.Rect(10 + 120 * i, 50 + 70 * j,
+                          100, 50) for i in range(10) for j in range(4)]
+color_list = [(random.randrange(0, 255),
+               random.randrange(0, 255), random.randrange(0, 255))
+              for i in range(10) for j in range(4)]
+
+# Randomly choose unbreakable blocks
+unbreakable_block_list = []
+for _ in range(5):  # Number of unbreakable blocks
+    random_index = random.randint(0, len(block_list) - 1)
+    unbreakable_block_list.append(block_list.pop(random_index))
+
+unbreakable_color_list = [(0, 0, 255) for _ in range(len(unbreakable_block_list))]
+
+bonus_brick_types = {
+    "longer_paddle": {"color": (0, 255, 0), "perk": "paddle", "message": "Longer paddle!"},
+    "increase_speed": {"color": (255, 165, 0), "perk": "speed", "message": "Speed Up!"},
+}
+
+bonus_brick_list = []
+for _ in range(5):  # Number of bonus bricks
+    random_index = random.randint(0, len(block_list) - 1)
+    bonus_brick_type = random.choice(list(bonus_brick_types.keys()))
+    bonus_brick_list.append((block_list.pop(random_index), bonus_brick_type))
 
 # Game over Screen
 losefont = pygame.font.SysFont('comicsansms', 40)
 losetext = losefont.render('Game Over', True, (255, 255, 255))
 losetextRect = losetext.get_rect()
-losetextRect.center = (WIDTH // 2, HEIGHT // 2)
+losetextRect.center = (W // 2, H // 2)
 
 # Win Screen
 winfont = pygame.font.SysFont('comicsansms', 40)
-wintext = losefont.render('You win yay', True, (0, 0, 0))
+wintext = winfont.render('You win yay', True, (0, 0, 0))
 wintextRect = wintext.get_rect()
-wintextRect.center = (WIDTH // 2, HEIGHT // 2)
+wintextRect.center = (W // 2, H // 2)
 
-# Game score
-game_score = 0
-game_score_fonts = pygame.font.SysFont('comicsansms', 40)
-game_score_text = game_score_fonts.render(f'Your game score is: {game_score}', True, (0, 0, 0))
-game_score_rect = game_score_text.get_rect()
-game_score_rect.center = (210, 20)
+# Message variables
+message_font = pygame.font.SysFont('comicsansms', 40)
+last_message = ""  # Stores the last message
+last_message_rect = None  # Stores the last message's rect
 
-# Brick breaking sound
-collision_sound = pygame.mixer.Sound('catch.mp3')
-collision_sound.set_volume(0.5)
-
-# Game objects
-# paddle
-paddle = pygame.Rect(WIDTH // 2 - PADDLE_WIDTH // 2, HEIGHT - PADDLE_HEIGHT - 20, PADDLE_WIDTH, PADDLE_HEIGHT)
-
-# ball
-ballRadius = 20
-ball_rect = int(ballRadius * 2 ** 0.5)
-ball = pygame.Rect(random.randrange(ball_rect, WIDTH - ball_rect), HEIGHT // 2, ball_rect, ball_rect)
-ball_speed_x = BALL_SPEED // 2
-ball_speed_y = -BALL_SPEED // 2
-
-# bricks
-bricks = []
-bonus_bricks = []
-
-UNBREAKABLE_POSITIONS = [(1, 2), (1, 7), (2, 2), (2, 7), (3, 2), (3, 7), (4, 2), (4, 7), (5, 2), (5, 7)]
-BONUS_POSITIONS = [(0, 2), (0, 7), (1, 5), (2, 5), (3, 5), (4, 5), (5, 5)]
-
-brick_width, brick_height = 76, 20
-brick_spacing_x, brick_spacing_y = 5, 5
-
-for i in range(BRICK_ROWS):
-    for j in range(BRICK_COLS):
-        brick_x = j * (brick_width + brick_spacing_x) + brick_spacing_x
-        brick_y = i * (brick_height + brick_spacing_y) + brick_spacing_y + 50
-        brick = pygame.Rect(brick_x, brick_y, brick_width, brick_height)
-        
-        if (i, j) in UNBREAKABLE_POSITIONS:
-            bricks.append((brick, True, BLUE))  # Unbreakable bricks
-        elif (i, j) in BONUS_POSITIONS:
-            bonus_bricks.append(brick)  # Bonus bricks
-        else:
-            bricks.append((brick, False, WHITE))  # Regular bricks
-
-# Function to display pause menu
-pause_font = pygame.font.SysFont('comicsansms', 40)
-def display_pause_menu():
-    screen.fill((0, 0, 0))  # Fill the screen with black
-    resume_text = pause_font.render('Resume (ESC)', True, (255, 255, 255))
-    settings_text = pause_font.render('Settings (S)', True, (255, 255, 255))
-    quit_text = pause_font.render('Quit (Q)', True, (255, 255, 255))
-    resume_rect = resume_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
-    settings_rect = settings_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
-    quit_rect = quit_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50))
-    screen.blit(resume_text, resume_rect)
-    screen.blit(settings_text, settings_rect)
-    screen.blit(quit_text, quit_rect)
-    pygame.display.flip()
-
-settings_font = pygame.font.SysFont('comicsansms', 40)
-
-def display_settings_menu():
-    global normal_mode_text_timer, challenge_mode_text_timer
-    screen.fill((0, 0, 0))  # Fill the screen with black
-    fps_text = settings_font.render('Normal/Challenge (M)', True, (255, 255, 255))
-    full_text = settings_font.render('Fullscreen mode (F)', True, (255, 255, 255))
-    back_text = settings_font.render('Back (ESC)', True, (255, 255, 255))
-    fps_rect = fps_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
-    full_rect = full_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
-    back_rect = back_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50))
-    screen.blit(fps_text, fps_rect)
-    screen.blit(full_text, full_rect)
-    screen.blit(back_text, back_rect)
-    # Mode Changed    
-    if normal_mode_text_timer > 0:
-        fps_changed_text = settings_font.render('Normal Mode', True, WHITE)
-        fps_changed_rect = fps_changed_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 100))
-        screen.blit(fps_changed_text, fps_changed_rect)
-        normal_mode_text_timer -= 1
-    
-    # Mode Changed    
-    if challenge_mode_text_timer > 0:
-        fps_changed_text = settings_font.render('Challenge Mode', True, WHITE)
-        fps_changed_rect = fps_changed_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 100))
-        screen.blit(fps_changed_text, fps_changed_rect)
-        challenge_mode_text_timer -= 1
-    pygame.display.flip()
-
-def toggle_fullscreen():
-    global screen, WIDTH, HEIGHT
-    if not screen.get_flags() & pygame.FULLSCREEN:
-        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
-    else:
-        screen = pygame.display.set_mode((WIDTH, HEIGHT))
-
-fps_change = False
-def toggle_FPS():
-    global FPS, fps_change, normal_mode_text_timer, challenge_mode_text_timer
-    fps_change = not fps_change
-    if not fps_change:
-        FPS = 60
-        normal_mode_text_timer = 360
-    else:
-        FPS = 120
-        challenge_mode_text_timer = 720
-
-# Define a variable to track if the game is paused
-paused = False
-in_settings_menu = False
-
-# Function to toggle pause state
-def toggle_pause():
-    global paused
-    paused = not paused
-
-# Main game loop
-running = True
-while running:
-    screen.fill(BLACK)
+while not done:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                if in_settings_menu:
-                    in_settings_menu = False
-                else:
-                    toggle_pause()
-            elif event.key == pygame.K_s and paused:
-                in_settings_menu = True
-            elif event.key == pygame.K_q and paused and not in_settings_menu:
-                running = False
-            elif event.key == pygame.K_f and in_settings_menu:
-                toggle_fullscreen()
-            elif event.key == pygame.K_m and in_settings_menu:
-                toggle_FPS()
+            done = True
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_p:  # Toggle pause
+                is_paused = not is_paused
+            if is_paused:
+                if event.key == pygame.K_w:
+                    paddleW += 10
+                    paddle = pygame.Rect(paddle.left, paddle.top, paddleW, paddleH)  # Adjust paddle size
+                if event.key == pygame.K_s and paddleW > 10:
+                    paddleW -= 10
+                    paddle = pygame.Rect(paddle.left, paddle.top, paddleW, paddleH)  # Adjust paddle size
+                if event.key == pygame.K_d:
+                    ballRadius += 1
+                if event.key == pygame.K_a and ballRadius > 1:
+                    ballRadius -= 1
 
-    if not paused:
-        # Move the paddle
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT] and paddle.left > 0:
-            paddle.left -= PADDLE_SPEED
-        if keys[pygame.K_RIGHT] and paddle.right < WIDTH:
-            paddle.right += PADDLE_SPEED
+    if is_paused:
+        screen.fill((100, 100, 100))
+        pause_text = game_score_fonts.render('Game Paused. Press P to resume.', True, (255, 255, 255))
+        settings_text_1 = game_score_fonts.render(
+            f'Paddle Width: {paddleW}, Ball Radius: {ballRadius}.', True,
+            (255, 255, 255))
+        settings_text_2 = game_score_fonts.render(
+            'W/S: Adjust paddle. D/A: Adjust ball.', True,
+            (255, 255, 255))
 
-        # Move the ball
-        ball.x += ball_speed_x
-        ball.y += ball_speed_y
-
-        # Collision part
-        # Check for collisions with walls
-        if ball.left < -3 or ball.right > WIDTH + 3:
-            overtime()
-            ball_speed_x = -ball_speed_x
-        if ball.top < 0:
-            overtime()
-            ball_speed_y = -ball_speed_y
-
-        # Check for collisions with paddle
-        if ball.colliderect(paddle) and ball_speed_y > 0:
-            # Calculate bounce angle based on where the ball hits the paddle
-            rel_x = (paddle.x + paddle.width / 2) - ball.centerx
-            norm_x = rel_x / (paddle.width / 2)
-            bounce_angle = norm_x * -MAX_BOUNCE_ANGLE
-            # Update ball speed based on bounce angle
-            ball_speed_x = BALL_SPEED * math.sin(bounce_angle)
-            ball_speed_y = -BALL_SPEED * math.cos(bounce_angle)
-
-        # Brick collision part
-        # Check for collisions with bricks
-        for i, brick_data in enumerate(bricks):
-            brick, unbreakable, color = brick_data
-            if brick is not None and ball.colliderect(brick):
-                if unbreakable:
-                    ball_speed_x, ball_speed_y = detect_collision(ball_speed_x, ball_speed_y, ball, brick)
-                else:
-                    bricks[i] = None  # Mark brick as destroyed
-                    ball_speed_x, ball_speed_y = detect_collision(ball_speed_x, ball_speed_y, ball, brick)
-                    game_score += 1
-                    collision_sound.play()
-
-        # Update removed bricks
-        bricks = [brick_data for brick_data in bricks if brick_data is not None]
-
-        # Check for collisions with bonus bricks
-        hitIndex = ball.collidelist(bonus_bricks)
-        if hitIndex != -1:
-            hitRect = bonus_bricks.pop(hitIndex)
-            perk = random.choice(BONUS_PERKS)
-            apply_bonus_perk(perk)
-            ball_speed_x, ball_speed_y = detect_collision(ball_speed_x, ball_speed_y, ball, hitRect)
-            game_score += 1
-            bonus_text = f"Bonus: {perk}"
-            bonus_text_timer = 120
-            collision_sound.play()
-
-        # Draw the game objects
-        # paddle
-        pygame.draw.rect(screen, BLUE, paddle)
-        # ball
-        pygame.draw.circle(screen, WHITE, ball.center, BALL_RADIUS)
-        # bricks
-        for brick_data in bricks:
-            if brick_data is not None:
-                brick, _, color = brick_data
-                pygame.draw.rect(screen, color, brick)
-        # bonus bricks
-        for brick in bonus_bricks:
-            pygame.draw.rect(screen, GOLD, brick)
-
-        # Game score
-        game_score_text = game_score_fonts.render(f'Score: {game_score}', True, (255, 255, 255))
-        screen.blit(game_score_text, game_score_rect)
-
-        # Bonus bricks info
-        if bonus_text_timer > 0:
-            bonus_text_surface = pygame.font.SysFont('comicsansms', 40).render(bonus_text, True, WHITE)
-            bonus_text_rect = bonus_text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2))
-            screen.blit(bonus_text_surface, bonus_text_rect)
-            bonus_text_timer -= 1
-
-        # Check if the ball missed the paddle
-        if ball.top > HEIGHT:
-            screen.fill((0, 0, 0))
-            screen.blit(losetext, losetextRect)
-            running = False
-        elif all(brick_data is None or brick_data[1] for brick_data in bricks) and not bonus_bricks:
-            screen.fill((255, 255, 255))
-            screen.blit(wintext, wintextRect)
-            running = False
+        screen.blit(pause_text, (W / 2 - pause_text.get_width() / 2, H / 2 - pause_text.get_height() / 2 - 20))
+        screen.blit(settings_text_1, (W / 2 - settings_text_1.get_width() / 2, H / 2 + 20))
+        screen.blit(settings_text_2, (W / 2 - settings_text_2.get_width() / 2, H / 2 + 80))
 
         pygame.display.flip()
-        clock.tick(FPS)
-    elif in_settings_menu:
-        display_settings_menu()
-    else:
-        display_pause_menu()
+        continue
 
-time.sleep(1)
-pygame.quit()
+    screen.fill(bg)
+
+    [pygame.draw.rect(screen, color_list[color], block) for color, block in enumerate(block_list)]  # drawing blocks
+    [pygame.draw.rect(screen, (0, 0, 255), block) for block in unbreakable_block_list]  # drawing unbreakable blocks
+
+    pygame.draw.rect(screen, pygame.Color(255, 255, 255), paddle)
+    pygame.draw.circle(screen, pygame.Color(255, 0, 0), ball.center, ballRadius)
+
+    ball.x += ballSpeed * dx
+    ball.y += ballSpeed * dy
+
+    if ball.centerx < ballRadius or ball.centerx > W - ballRadius:
+        dx = -dx
+    if ball.centery < ballRadius + 50:
+        dy = -dy
+    if ball.colliderect(paddle) and dy > 0:
+        dx, dy = detect_collision(dx, dy, ball, paddle)
+
+    hitIndex = ball.collidelist(block_list)
+
+    if hitIndex != -1:
+        hitRect = block_list.pop(hitIndex)
+        hitColor = color_list.pop(hitIndex)
+        dx, dy = detect_collision(dx, dy, ball, hitRect)
+        game_score += 1
+        collision_sound.play()
+
+    # Check collision with unbreakable blocks
+    for i, unbreakable_block in enumerate(unbreakable_block_list):
+        if ball.colliderect(unbreakable_block):
+            dx, dy = detect_collision(dx, dy, ball, unbreakable_block)
+
+    for block, bonus_type in bonus_brick_list:
+        pygame.draw.rect(screen, bonus_brick_types[bonus_type]["color"], block)
+
+    # Collision detection for bonus bricks
+    for i, (bonus_brick, bonus_type) in enumerate(bonus_brick_list):
+        if ball.colliderect(bonus_brick):
+            # Apply perk of the bonus brick
+            if bonus_brick_types[bonus_type]["perk"] == "speed":
+                ballSpeed += 2  # Example increase in speed
+
+            # Update last message
+            last_message = bonus_brick_types[bonus_type]["message"]
+            last_message_surface = message_font.render(last_message, True, (255, 255, 255))
+            last_message_rect = last_message_surface.get_rect(topright=(W - 10, -10))  # Adjust position
+
+            # Remove the bonus brick from the list
+            del bonus_brick_list[i]
+            break
+
+    # Display last message
+    if last_message:
+        screen.blit(last_message_surface, last_message_rect)
+
+    game_score_text = game_score_fonts.render(f'Your game score is: {game_score}', True, (255, 255, 255))
+    screen.blit(game_score_text, game_score_rect)
+
+    if ball.bottom > H:
+        screen.fill((0, 0, 0))
+        screen.blit(losetext, losetextRect)
+    elif not len(block_list):
+        screen.fill((255, 255, 255))
+        screen.blit(wintext, wintextRect)
+        pygame.display.flip()
+        continue
+
+    # Increase ball speed over time
+    time_elapsed += clock.get_rawtime()
+    if time_elapsed >= speed_increase_interval:
+        ballSpeed += speed_increase_amount
+        time_elapsed = 0
+
+    # Shrink paddle over time
+    if time_elapsed >= shrink_paddle_interval:
+        paddleW -= shrink_paddle_amount
+        if paddleW < 50:  # Limit the minimum width of the paddle
+            paddleW = 50
+        paddle.width = paddleW
+        time_elapsed = 0
+
+    key = pygame.key.get_pressed()
+    if key[pygame.K_LEFT] and paddle.left > 0:
+        paddle.left -= paddleSpeed
+    if key[pygame.K_RIGHT] and paddle.right < W:
+        paddle.right += paddleSpeed
+
+    pygame.display.flip()
+    clock.tick(FPS)
